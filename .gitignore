@@ -1,0 +1,10 @@
+# Virtual environment directories
+/gem
+
+# Ignore all __pycache__ directories anywhere in the project
+**/__pycache__/
+
+# Also ignore any stray compiled Python files
+*.pyc
+*.pyo
+*.pyd
