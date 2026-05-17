@@ -1,0 +1,447 @@
+{
+  "info": {
+    "name": "GEM Strategy API",
+    "description": "Global Equity Momentum signal API.\n\nBased on Gary Antonacci's Dual Momentum Investing (2014). Computes 12-month (skip-1-month) momentum across SPY, ACWX, AGG, and BIL to determine the optimal ETF to hold each month.\n\n---\n\n**Setup:**\n1. Make sure the server is running: `python server.py`\n2. The `base_url` variable is set to `http://localhost:8000` — change it if you deploy elsewhere.\n3. Run the requests in order — start with Health Check to confirm the server is up.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "gem-strategy-api-v1"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Base URL of the GEM API server. Change this if running on a different host or port."
+    }
+  ],
+  "item": [
+    {
+      "name": "Meta",
+      "description": "Service-level endpoints — health check and API info.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Returns the service status and whether the daily signal cache is populated.\n\nUse this to confirm the server is running and to check when the cache was last refreshed."
+          },
+          "response": [
+            {
+              "name": "200 OK — cache warm",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"ok\",\n  \"cache_populated\": true,\n  \"cache_date\": \"2025-05-15\",\n  \"version\": \"1.0.0\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "200 OK — cache cold (just started)",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"ok\",\n  \"cache_populated\": false,\n  \"cache_date\": null,\n  \"version\": \"1.0.0\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has required fields', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('status');",
+                  "    pm.expect(body).to.have.property('cache_populated');",
+                  "    pm.expect(body).to.have.property('version');",
+                  "});",
+                  "",
+                  "pm.test('Status is ok', () => {",
+                  "    pm.expect(pm.response.json().status).to.eql('ok');",
+                  "});",
+                  "",
+                  "pm.test('Response time is under 500ms', () => {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Signal",
+      "description": "Current GEM signal endpoints — what to hold right now.",
+      "item": [
+        {
+          "name": "Get Current Signal",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/signal",
+              "host": ["{{base_url}}"],
+              "path": ["signal"]
+            },
+            "description": "Returns the current GEM signal — which ETF to hold right now.\n\nResult is cached and recomputed once per calendar day. The `cached` field tells you whether this response was freshly computed or served from cache.\n\n**Signal logic:**\n1. RELATIVE momentum — SPY vs ACWX (12-month, skip-1-month)\n2. ABSOLUTE momentum — equity winner vs BIL\n   - Equity beats BIL → hold the equity winner\n   - Equity below BIL → rotate to AGG (safe haven bonds)"
+          },
+          "response": [
+            {
+              "name": "200 OK — hold US equities",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"signal\": {\n    \"hold_ticker\": \"SPY\",\n    \"hold_name\": \"SPDR S&P 500 ETF\",\n    \"equity_winner\": \"SPY\",\n    \"beat_risk_free\": true,\n    \"as_of_date\": \"2025-05-15\"\n  },\n  \"scores\": {\n    \"SPY\": {\n      \"ticker\": \"SPY\",\n      \"name\": \"SPDR S&P 500 ETF\",\n      \"price_then\": 420.11,\n      \"price_now\": 521.34,\n      \"momentum_pct\": 24.10\n    },\n    \"ACWX\": {\n      \"ticker\": \"ACWX\",\n      \"name\": \"iShares MSCI ACWI ex-US ETF\",\n      \"price_then\": 50.22,\n      \"price_now\": 54.55,\n      \"momentum_pct\": 8.62\n    },\n    \"AGG\": {\n      \"ticker\": \"AGG\",\n      \"name\": \"iShares Core U.S. Aggregate Bond ETF\",\n      \"price_then\": 95.10,\n      \"price_now\": 98.44,\n      \"momentum_pct\": 3.51\n    },\n    \"BIL\": {\n      \"ticker\": \"BIL\",\n      \"name\": \"SPDR Bloomberg 1-3 Month T-Bill ETF\",\n      \"price_then\": 91.44,\n      \"price_now\": 91.80,\n      \"momentum_pct\": 0.39\n    }\n  },\n  \"cached\": true,\n  \"generated_at\": \"2025-05-15T08:01:34.000Z\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "200 OK — rotate to safe haven (AGG)",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"signal\": {\n    \"hold_ticker\": \"AGG\",\n    \"hold_name\": \"iShares Core U.S. Aggregate Bond ETF\",\n    \"equity_winner\": \"SPY\",\n    \"beat_risk_free\": false,\n    \"as_of_date\": \"2025-05-15\"\n  },\n  \"scores\": {\n    \"SPY\": {\n      \"ticker\": \"SPY\",\n      \"name\": \"SPDR S&P 500 ETF\",\n      \"price_then\": 480.00,\n      \"price_now\": 460.00,\n      \"momentum_pct\": -4.17\n    },\n    \"ACWX\": {\n      \"ticker\": \"ACWX\",\n      \"name\": \"iShares MSCI ACWI ex-US ETF\",\n      \"price_then\": 55.00,\n      \"price_now\": 51.00,\n      \"momentum_pct\": -7.27\n    },\n    \"AGG\": {\n      \"ticker\": \"AGG\",\n      \"name\": \"iShares Core U.S. Aggregate Bond ETF\",\n      \"price_then\": 96.00,\n      \"price_now\": 97.50,\n      \"momentum_pct\": 1.56\n    },\n    \"BIL\": {\n      \"ticker\": \"BIL\",\n      \"name\": \"SPDR Bloomberg 1-3 Month T-Bill ETF\",\n      \"price_then\": 91.30,\n      \"price_now\": 91.80,\n      \"momentum_pct\": 0.55\n    }\n  },\n  \"cached\": false,\n  \"generated_at\": \"2025-05-15T08:01:34.000Z\"\n}",
+              "_postman_previewlanguage": "json"
+            },
+            {
+              "name": "503 Service Unavailable — Yahoo Finance down",
+              "status": "Service Unavailable",
+              "code": 503,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"detail\": \"Unable to compute signal: HTTPError fetching SPY\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Signal has required fields', () => {",
+                  "    const { signal } = pm.response.json();",
+                  "    pm.expect(signal).to.have.property('hold_ticker');",
+                  "    pm.expect(signal).to.have.property('hold_name');",
+                  "    pm.expect(signal).to.have.property('equity_winner');",
+                  "    pm.expect(signal).to.have.property('beat_risk_free');",
+                  "    pm.expect(signal).to.have.property('as_of_date');",
+                  "});",
+                  "",
+                  "pm.test('hold_ticker is one of the known ETFs', () => {",
+                  "    const validTickers = ['SPY', 'ACWX', 'AGG'];",
+                  "    pm.expect(validTickers).to.include(pm.response.json().signal.hold_ticker);",
+                  "});",
+                  "",
+                  "pm.test('Scores contain all 4 ETFs', () => {",
+                  "    const { scores } = pm.response.json();",
+                  "    ['SPY', 'ACWX', 'AGG', 'BIL'].forEach(t => {",
+                  "        pm.expect(scores).to.have.property(t);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('Each score has momentum_pct as a number', () => {",
+                  "    const { scores } = pm.response.json();",
+                  "    Object.values(scores).forEach(s => {",
+                  "        pm.expect(s.momentum_pct).to.be.a('number');",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('cached field is a boolean', () => {",
+                  "    pm.expect(pm.response.json().cached).to.be.a('boolean');",
+                  "});",
+                  "",
+                  "// Store hold_ticker for use in other tests",
+                  "pm.collectionVariables.set('last_hold_ticker', pm.response.json().signal.hold_ticker);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Momentum Scores Only",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/signal/scores",
+              "host": ["{{base_url}}"],
+              "path": ["signal", "scores"]
+            },
+            "description": "Returns only the raw 12-month momentum scores for all 4 ETFs, without the full signal decision.\n\nUseful for charting or comparing instruments directly. Served from the same daily cache as `/signal`."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"SPY\": {\n    \"ticker\": \"SPY\",\n    \"name\": \"SPDR S&P 500 ETF\",\n    \"price_then\": 420.11,\n    \"price_now\": 521.34,\n    \"momentum_pct\": 24.10\n  },\n  \"ACWX\": {\n    \"ticker\": \"ACWX\",\n    \"name\": \"iShares MSCI ACWI ex-US ETF\",\n    \"price_then\": 50.22,\n    \"price_now\": 54.55,\n    \"momentum_pct\": 8.62\n  },\n  \"AGG\": {\n    \"ticker\": \"AGG\",\n    \"name\": \"iShares Core U.S. Aggregate Bond ETF\",\n    \"price_then\": 95.10,\n    \"price_now\": 98.44,\n    \"momentum_pct\": 3.51\n  },\n  \"BIL\": {\n    \"ticker\": \"BIL\",\n    \"name\": \"SPDR Bloomberg 1-3 Month T-Bill ETF\",\n    \"price_then\": 91.44,\n    \"price_now\": 91.80,\n    \"momentum_pct\": 0.39\n  }\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Returns all 4 ETF scores', () => {",
+                  "    const body = pm.response.json();",
+                  "    ['SPY', 'ACWX', 'AGG', 'BIL'].forEach(t => {",
+                  "        pm.expect(body).to.have.property(t);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('Each score has price_then, price_now, momentum_pct', () => {",
+                  "    const body = pm.response.json();",
+                  "    Object.values(body).forEach(score => {",
+                  "        pm.expect(score).to.have.property('price_then');",
+                  "        pm.expect(score).to.have.property('price_now');",
+                  "        pm.expect(score).to.have.property('momentum_pct');",
+                  "        pm.expect(score.price_then).to.be.a('number');",
+                  "        pm.expect(score.price_now).to.be.a('number');",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('BIL momentum is low (T-bill, expected < 10%)', () => {",
+                  "    const bil = pm.response.json()['BIL'];",
+                  "    pm.expect(bil.momentum_pct).to.be.below(10);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "History",
+      "description": "Historical GEM signal endpoints — monthly backfill with no look-ahead bias.",
+      "item": [
+        {
+          "name": "Get History — default (24 months)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/history",
+              "host": ["{{base_url}}"],
+              "path": ["history"]
+            },
+            "description": "Returns the GEM signal for each month-start over the past 24 months (default).\n\nEach entry uses only data available at that rebalance date — no look-ahead bias. Most-recent month is listed first.\n\n⚠️ This endpoint fetches fresh data on every call and may take a few seconds."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"entries\": [\n    {\n      \"date\": \"2025-05-01\",\n      \"hold_ticker\": \"SPY\",\n      \"hold_name\": \"SPDR S&P 500 ETF\",\n      \"equity_winner\": \"SPY\",\n      \"beat_risk_free\": true,\n      \"scores\": {\n        \"SPY\":  { \"ticker\": \"SPY\",  \"name\": \"SPDR S&P 500 ETF\",                    \"price_then\": 420.11, \"price_now\": 521.34, \"momentum_pct\": 24.10 },\n        \"ACWX\": { \"ticker\": \"ACWX\", \"name\": \"iShares MSCI ACWI ex-US ETF\",         \"price_then\": 50.22,  \"price_now\": 54.55,  \"momentum_pct\": 8.62  },\n        \"AGG\":  { \"ticker\": \"AGG\",  \"name\": \"iShares Core U.S. Aggregate Bond ETF\", \"price_then\": 95.10,  \"price_now\": 98.44,  \"momentum_pct\": 3.51  },\n        \"BIL\":  { \"ticker\": \"BIL\",  \"name\": \"SPDR Bloomberg 1-3 Month T-Bill ETF\",  \"price_then\": 91.44,  \"price_now\": 91.80,  \"momentum_pct\": 0.39  }\n      }\n    },\n    {\n      \"date\": \"2025-04-01\",\n      \"hold_ticker\": \"AGG\",\n      \"hold_name\": \"iShares Core U.S. Aggregate Bond ETF\",\n      \"equity_winner\": \"SPY\",\n      \"beat_risk_free\": false,\n      \"scores\": {\n        \"SPY\":  { \"ticker\": \"SPY\",  \"name\": \"SPDR S&P 500 ETF\",                    \"price_then\": 430.00, \"price_now\": 429.50, \"momentum_pct\": -0.12 },\n        \"ACWX\": { \"ticker\": \"ACWX\", \"name\": \"iShares MSCI ACWI ex-US ETF\",         \"price_then\": 52.00,  \"price_now\": 51.80,  \"momentum_pct\": -0.38 },\n        \"AGG\":  { \"ticker\": \"AGG\",  \"name\": \"iShares Core U.S. Aggregate Bond ETF\", \"price_then\": 96.00,  \"price_now\": 97.10,  \"momentum_pct\": 1.15  },\n        \"BIL\":  { \"ticker\": \"BIL\",  \"name\": \"SPDR Bloomberg 1-3 Month T-Bill ETF\",  \"price_then\": 91.20,  \"price_now\": 91.70,  \"momentum_pct\": 0.55  }\n      }\n    }\n  ],\n  \"months\": 24,\n  \"generated_at\": \"2025-05-15T09:14:22.000Z\"\n}",
+              "_postman_previewlanguage": "json"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has entries array', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body).to.have.property('entries');",
+                  "    pm.expect(body.entries).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('months field matches entry count', () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.months).to.eql(body.entries.length);",
+                  "});",
+                  "",
+                  "pm.test('Entries are sorted most-recent first', () => {",
+                  "    const entries = pm.response.json().entries;",
+                  "    if (entries.length > 1) {",
+                  "        pm.expect(entries[0].date > entries[1].date).to.be.true;",
+                  "    }",
+                  "});",
+                  "",
+                  "pm.test('Each entry has all required fields', () => {",
+                  "    pm.response.json().entries.forEach(e => {",
+                  "        pm.expect(e).to.have.property('date');",
+                  "        pm.expect(e).to.have.property('hold_ticker');",
+                  "        pm.expect(e).to.have.property('beat_risk_free');",
+                  "        pm.expect(e).to.have.property('scores');",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test('hold_ticker is always SPY, ACWX, or AGG', () => {",
+                  "    const valid = ['SPY', 'ACWX', 'AGG'];",
+                  "    pm.response.json().entries.forEach(e => {",
+                  "        pm.expect(valid).to.include(e.hold_ticker);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get History — 6 months",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/history?months=6",
+              "host": ["{{base_url}}"],
+              "path": ["history"],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "6",
+                  "description": "Return only the last 6 monthly signals"
+                }
+              ]
+            },
+            "description": "Same as the default history endpoint but limited to the last 6 months. Faster response."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Returns at most 6 entries', () => {",
+                  "    pm.expect(pm.response.json().entries.length).to.be.at.most(6);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get History — 120 months (max)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/history?months=120",
+              "host": ["{{base_url}}"],
+              "path": ["history"],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "120",
+                  "description": "Maximum allowed — 10 years of monthly signals"
+                }
+              ]
+            },
+            "description": "Maximum history request — 10 years of monthly GEM signals.\n\n⚠️ This will take several seconds as it downloads and processes a large price history."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 200', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Returns a substantial number of entries', () => {",
+                  "    pm.expect(pm.response.json().entries.length).to.be.above(10);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get History — invalid months (expect 422)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/history?months=0",
+              "host": ["{{base_url}}"],
+              "path": ["history"],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "0",
+                  "description": "Invalid — must be >= 1. Expect a 422 Unprocessable Entity."
+                }
+              ]
+            },
+            "description": "Validation test — `months` must be between 1 and 120. Sending 0 should return a 422 error."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 422 for invalid months=0', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "pm.test('Error response has detail field', () => {",
+                  "    pm.expect(pm.response.json()).to.have.property('detail');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get History — months above max (expect 422)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/history?months=121",
+              "host": ["{{base_url}}"],
+              "path": ["history"],
+              "query": [
+                {
+                  "key": "months",
+                  "value": "121",
+                  "description": "Invalid — must be <= 120. Expect a 422 Unprocessable Entity."
+                }
+              ]
+            },
+            "description": "Validation test — `months` above the maximum of 120 should return a 422 error."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status code is 422 for months=121', () => {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
