@@ -1,4 +1,4 @@
-# GEM Tool 📈
+# GEM Strategy 📈
 
 **Global Equity Momentum** strategy signal generator — CLI + REST API.
 
@@ -24,12 +24,12 @@ GEM rotates monthly between positions based on momentum:
 
 **ETF universe (original Antonacci instruments):**
 
-| Role | Ticker | Name | Original index |
-|---|---|---|---|
-| US Equity | `SPY` | SPDR S&P 500 ETF | S&P 500 |
-| Intl Equity | `ACWX` | iShares MSCI ACWI ex-US ETF | MSCI ACWI ex-USA |
-| Safe Haven | `AGG` | iShares Core U.S. Aggregate Bond ETF | Bloomberg US Aggregate Bond |
-| Risk-Free benchmark | `BIL` | SPDR Bloomberg 1-3 Month T-Bill ETF | 3-Month US Treasury Bills |
+| Role                | Ticker | Name                                 | Original index              |
+|---------------------|--------|--------------------------------------|-----------------------------|
+| US Equity           | `SPY`  | SPDR S&P 500 ETF                     | S&P 500                     |
+| Intl Equity         | `ACWX` | iShares MSCI ACWI ex-US ETF          | MSCI ACWI ex-USA            |
+| Safe Haven          | `AGG`  | iShares Core U.S. Aggregate Bond ETF | Bloomberg US Aggregate Bond |
+| Risk-Free benchmark | `BIL`  | SPDR Bloomberg 1-3 Month T-Bill ETF  | 3-Month US Treasury Bills   |
 
 > **Note:** `AGG` and `BIL` play different roles. `BIL` is only used as the absolute-momentum
 > benchmark (step 2 comparison). `AGG` is what you actually *hold* during the defensive phase.
@@ -39,7 +39,7 @@ GEM rotates monthly between positions based on momentum:
 ## Project structure
 
 ```
-gem-tool/
+gem-strategy/
 ├── server.py              ← API entry point (start here for the backend)
 ├── main.py                ← CLI entry point
 ├── config.py              ← ETF universe & strategy parameters
@@ -93,12 +93,12 @@ Interactive API docs (Swagger UI) are available at **`http://localhost:8000/docs
 
 ## API endpoints
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Service status and cache state |
-| `GET` | `/signal` | Current GEM signal — which ETF to hold now |
-| `GET` | `/signal/scores` | Raw 12-month momentum % for all 4 ETFs |
-| `GET` | `/history?months=N` | Monthly GEM signals for the past N months (1–120) |
+| Method | Path                | Description                                       |
+|--------|---------------------|---------------------------------------------------|
+| `GET`  | `/health`           | Service status and cache state                    |
+| `GET`  | `/signal`           | Current GEM signal — which ETF to hold now        |
+| `GET`  | `/signal/scores`    | Raw 12-month momentum % for all 4 ETFs            |
+| `GET`  | `/history?months=N` | Monthly GEM signals for the past N months (1–120) |
 
 ### Caching
 
