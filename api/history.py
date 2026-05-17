@@ -1,7 +1,7 @@
 """
 api/history.py
 ──────────────
-Computes the GEM signal for each month-end in the available price history.
+Computes the GEM signal for each month-start in the available price history.
 
 How it works:
   For every first trading day of each calendar month in the price series,
@@ -9,8 +9,10 @@ How it works:
   that day were "today". This gives a realistic backfill of what signal
   GEM would have produced at each monthly rebalance point.
 
-Note: the earliest months are dropped if there isn't enough history
-(LOOKBACK_DAYS + SKIP_DAYS rows before that date).
+  Crucially, fetch_prices is called with extra_months = months so the
+  download window is wide enough that every requested month-start slice
+  already has a full 12-month lookback (LOOKBACK_DAYS + SKIP_DAYS rows)
+  available before it — guaranteeing no entries are silently skipped.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from strategy.gem import GEMSignal, compute_signal
 
 logger = logging.getLogger(__name__)
 
-# Minimum rows needed before a month-end slice is valid
+# Minimum rows needed before a month-start slice is valid
 _MIN_ROWS = LOOKBACK_DAYS + SKIP_DAYS + 2
 
 
@@ -43,9 +45,16 @@ def compute_history(months: int = 24) -> List[dict]:
     Fetch full price history and return one GEM signal per month,
     most-recent first, capped at *months* entries.
 
+    fetch_prices is called with extra_months=months so the downloaded
+    window extends far enough back that all requested month-starts have
+    a complete 12-month lookback before them.
+
     Each dict matches the HistoricalEntry schema.
     """
-    prices = fetch_prices(ALL_TICKERS)
+    # Download enough history: standard window + one extra year per month
+    # requested beyond the baseline lookback.
+    prices = fetch_prices(ALL_TICKERS, extra_months=months)
+
     month_starts = _first_trading_days(prices.index)
 
     # Keep only the last `months` month-start dates
@@ -57,7 +66,13 @@ def compute_history(months: int = 24) -> List[dict]:
         slice_df = prices.loc[prices.index <= date]
 
         if len(slice_df) < _MIN_ROWS:
-            logger.debug("Skipping %s — not enough history (%d rows)", date.date(), len(slice_df))
+            # Should never happen now that the download window accounts for
+            # extra_months, but kept as a safety net with a clear warning.
+            logger.warning(
+                "Skipping %s — not enough history (%d rows, need %d). "
+                "This is unexpected; check DOWNLOAD_BUFFER in config.py.",
+                date.date(), len(slice_df), _MIN_ROWS,
+            )
             continue
 
         try:
