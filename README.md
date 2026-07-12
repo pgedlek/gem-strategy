@@ -22,7 +22,11 @@ GEM rotates monthly between positions based on momentum:
 └──────────────────────────────────────────────────────────┘
 ```
 
-**ETF universe (original Antonacci instruments):**
+**Strategy profiles** — two ETF universes are available, selectable via `--strategy` (CLI) or
+`?strategy=` (API). Both use the same GEM mechanics (12-month skip-1 momentum, relative then
+absolute); only the equity legs differ.
+
+**`classic`** (default) — original Antonacci instruments:
 
 | Role                | Ticker | Name                                 | Original index              |
 |---------------------|--------|--------------------------------------|-----------------------------|
@@ -31,8 +35,23 @@ GEM rotates monthly between positions based on momentum:
 | Safe Haven          | `AGG`  | iShares Core U.S. Aggregate Bond ETF | Bloomberg US Aggregate Bond |
 | Risk-Free benchmark | `BIL`  | SPDR Bloomberg 1-3 Month T-Bill ETF  | 3-Month US Treasury Bills   |
 
+**`aggressive`** — higher-beta variant, same mechanics:
+
+| Role                | Ticker | Name                                 | Original index              |
+|---------------------|--------|--------------------------------------|-----------------------------|
+| US Equity           | `QQQ`  | Invesco QQQ Trust                    | Nasdaq-100                  |
+| Intl Equity         | `EEM`  | iShares MSCI Emerging Markets ETF    | MSCI Emerging Markets       |
+| Safe Haven          | `AGG`  | iShares Core U.S. Aggregate Bond ETF | Bloomberg US Aggregate Bond |
+| Risk-Free benchmark | `BIL`  | SPDR Bloomberg 1-3 Month T-Bill ETF  | 3-Month US Treasury Bills   |
+
 > **Note:** `AGG` and `BIL` play different roles. `BIL` is only used as the absolute-momentum
 > benchmark (step 2 comparison). `AGG` is what you actually *hold* during the defensive phase.
+> Both strategy profiles share the same `AGG`/`BIL` legs — only the equity race changes.
+
+> ⚠️ Nasdaq-100 and Emerging Markets are more volatile than S&P 500 / ACWI-ex-US. Historically
+> higher CAGR has come with deeper drawdowns — GEM's absolute-momentum step still rotates you to
+> `AGG` when the equity winner is losing money, but the swings within "hold equities" periods are
+> larger. This is not investment advice.
 
 ---
 
@@ -95,14 +114,19 @@ Interactive API docs (Swagger UI) are available at **`http://localhost:8000/docs
 
 | Method | Path                | Description                                       |
 |--------|---------------------|---------------------------------------------------|
-| `GET`  | `/health`           | Service status and cache state                    |
+| `GET`  | `/health`           | Service status and per-strategy cache state       |
 | `GET`  | `/signal`           | Current GEM signal — which ETF to hold now        |
 | `GET`  | `/signal/scores`    | Raw 12-month momentum % for all 4 ETFs            |
 | `GET`  | `/history?months=N` | Monthly GEM signals for the past N months (1–120) |
+| `GET`  | `/history/series?months=N` | Momentum history, one series per ticker (chart-ready) |
+
+Every `/signal*` and `/history*` endpoint accepts an optional `?strategy=` query param:
+`classic` (default) or `aggressive`. See [Strategy profiles](#how-it-works) above. An unknown
+value returns `422 Unprocessable Entity`.
 
 ### Caching
 
-`/signal` and `/signal/scores` are served from an in-memory cache that refreshes once per calendar day. The cache warms automatically on server startup. The `cached` field in the response tells you whether the result was freshly computed or served from cache.
+`/signal` and `/signal/scores` are served from an in-memory cache that refreshes once per calendar day, **per strategy** — `classic` and `aggressive` are cached independently, so requesting one doesn't warm the other. Only the default (`classic`) strategy's cache is warmed automatically on server startup; `aggressive` is fetched lazily on first request. The `cached` field in the response tells you whether the result was freshly computed or served from cache. The cache also skips forced refreshes on weekends, since markets are closed and there's no new trading data to fetch.
 
 `/history` fetches fresh price data on every call. It downloads a wider price window proportional to the number of months requested, ensuring every month-start entry has a full 12-month lookback available — no look-ahead bias, no silently skipped entries.
 
@@ -111,6 +135,7 @@ Interactive API docs (Swagger UI) are available at **`http://localhost:8000/docs
 **`GET /signal`**
 ```json
 {
+  "strategy": "classic",
   "signal": {
     "hold_ticker": "SPY",
     "hold_name": "SPDR S&P 500 ETF",
@@ -129,9 +154,32 @@ Interactive API docs (Swagger UI) are available at **`http://localhost:8000/docs
 }
 ```
 
+**`GET /signal?strategy=aggressive`**
+```json
+{
+  "strategy": "aggressive",
+  "signal": {
+    "hold_ticker": "EEM",
+    "hold_name": "iShares MSCI Emerging Markets ETF",
+    "equity_winner": "EEM",
+    "beat_risk_free": true,
+    "as_of_date": "2025-05-15"
+  },
+  "scores": {
+    "QQQ": { "ticker": "QQQ", "momentum_pct": 34.22 },
+    "EEM": { "ticker": "EEM", "momentum_pct": 43.67 },
+    "AGG": { "ticker": "AGG", "momentum_pct":  5.18 },
+    "BIL": { "ticker": "BIL", "momentum_pct":  3.88 }
+  },
+  "cached": true,
+  "generated_at": "2025-05-15T08:01:34.000Z"
+}
+```
+
 **`GET /history?months=3`**
 ```json
 {
+  "strategy": "classic",
   "entries": [
     { "date": "2025-05-01", "hold_ticker": "SPY",  "beat_risk_free": true,  "equity_winner": "SPY"  },
     { "date": "2025-04-01", "hold_ticker": "AGG",  "beat_risk_free": false, "equity_winner": "SPY"  },
@@ -147,7 +195,8 @@ Interactive API docs (Swagger UI) are available at **`http://localhost:8000/docs
 ## Running the CLI
 
 ```bash
-python main.py
+python main.py                       # classic strategy (default)
+python main.py --strategy aggressive # QQQ / EEM variant
 ```
 
 ```
@@ -186,9 +235,9 @@ python main.py
 
 Edit `config.py` to change:
 
-- **ETF tickers** — swap SPY → VTI, ACWX → VXUS, AGG → BND, etc.
-- **Lookback window** — `LOOKBACK_DAYS` (default 252 ≈ 12 months of trading days)
-- **Skip window** — `SKIP_DAYS` (default 21 ≈ 1 month of trading days, skip-1 convention)
+- **Strategy profiles** — `STRATEGIES` holds one dict per profile (`classic`, `aggressive`), each defining `equity_us` / `equity_intl` / `safe_haven` / `risk_free` tickers. Add a new profile by adding a new entry — every module (CLI, cache, history, API) picks it up automatically via `get_strategy()` / `strategy_tickers()`. `DEFAULT_STRATEGY` controls which one is used when no `--strategy` / `?strategy=` is given.
+- **Lookback window** — `LOOKBACK_DAYS` (default 252 ≈ 12 months of trading days), shared across all strategy profiles
+- **Skip window** — `SKIP_DAYS` (default 21 ≈ 1 month of trading days, skip-1 convention), shared across all strategy profiles
 
 ---
 
@@ -207,6 +256,7 @@ Import it in Postman via **Import → drag the file in**. The `base_url` variabl
 - [x] Momentum scores endpoint
 - [x] Historical signals endpoint (no look-ahead bias)
 - [x] Postman collection
+- [x] Selectable strategy profiles (classic SPY/ACWX, aggressive QQQ/EEM)
 - [ ] Monthly backtest with performance stats
 - [ ] CSV / JSON export
 - [ ] Web UI (React)

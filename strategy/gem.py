@@ -21,10 +21,7 @@ from typing import Dict
 
 import pandas as pd
 
-from config import (
-    EQUITY_US, EQUITY_INTL, SAFE_HAVEN, RISK_FREE,
-    LOOKBACK_DAYS, SKIP_DAYS,
-)
+from config import LOOKBACK_DAYS, SKIP_DAYS, strategy_name_map
 
 
 # ── Data class for a single ETF's momentum snapshot ──────────────────────────
@@ -49,14 +46,16 @@ class GEMSignal:
     scores:         Dict[str, MomentumScore] = field(default_factory=dict)
     # Explanation path
     equity_winner:  str  = ""   # winner of relative-momentum comparison
-    beat_risk_free: bool = True  # did equity beat BIL?
+    beat_risk_free: bool = True  # did equity beat the risk-free benchmark?
     # Prices as of today
     as_of_date:     str  = ""
+    # Which strategy profile produced this signal (config.STRATEGIES key)
+    strategy:       str  = ""
 
 
 # ── Core calculation ──────────────────────────────────────────────────────────
 
-def _momentum(prices: pd.DataFrame, ticker: str) -> MomentumScore:
+def _momentum(prices: pd.DataFrame, ticker: str, name_map: Dict[str, str]) -> MomentumScore:
     """
     12-month (skip-1-month) momentum for a single ticker.
 
@@ -79,14 +78,6 @@ def _momentum(prices: pd.DataFrame, ticker: str) -> MomentumScore:
 
     momentum_pct = (price_now / price_then - 1) * 100
 
-    # Map ticker → name from config
-    name_map = {
-        EQUITY_US["ticker"]:   EQUITY_US["name"],
-        EQUITY_INTL["ticker"]: EQUITY_INTL["name"],
-        SAFE_HAVEN["ticker"]:  SAFE_HAVEN["name"],
-        RISK_FREE["ticker"]:   RISK_FREE["name"],
-    }
-
     return MomentumScore(
         ticker       = ticker,
         name         = name_map.get(ticker, ticker),
@@ -96,23 +87,25 @@ def _momentum(prices: pd.DataFrame, ticker: str) -> MomentumScore:
     )
 
 
-def compute_signal(prices: pd.DataFrame) -> GEMSignal:
+def compute_signal(prices: pd.DataFrame, profile: dict) -> GEMSignal:
     """
-    Run the full GEM algorithm on a price DataFrame and return a GEMSignal.
+    Run the full GEM algorithm on a price DataFrame for the given strategy
+    *profile* (see config.STRATEGIES) and return a GEMSignal.
     """
-    us_ticker   = EQUITY_US["ticker"]
-    intl_ticker = EQUITY_INTL["ticker"]
-    rf_ticker   = RISK_FREE["ticker"]
-    sh_ticker   = SAFE_HAVEN["ticker"]
+    us_ticker   = profile["equity_us"]["ticker"]
+    intl_ticker = profile["equity_intl"]["ticker"]
+    rf_ticker   = profile["risk_free"]["ticker"]
+    sh_ticker   = profile["safe_haven"]["ticker"]
+    name_map    = strategy_name_map(profile)
 
     # ── Step 1: Compute momentum for all candidates ───────────────────────────
     scores: Dict[str, MomentumScore] = {}
     for ticker in [us_ticker, intl_ticker, rf_ticker]:
-        scores[ticker] = _momentum(prices, ticker)
+        scores[ticker] = _momentum(prices, ticker, name_map)
 
-    # If safe-haven ≠ risk-free, score it too (in this config they're both BIL)
+    # If safe-haven ≠ risk-free, score it too
     if sh_ticker not in scores:
-        scores[sh_ticker] = _momentum(prices, sh_ticker)
+        scores[sh_ticker] = _momentum(prices, sh_ticker, name_map)
 
     as_of_date = prices.index[-1].strftime("%Y-%m-%d")
 
@@ -122,10 +115,10 @@ def compute_signal(prices: pd.DataFrame) -> GEMSignal:
 
     if us_mom >= intl_mom:
         equity_winner        = us_ticker
-        equity_winner_name   = EQUITY_US["name"]
+        equity_winner_name   = profile["equity_us"]["name"]
     else:
         equity_winner        = intl_ticker
-        equity_winner_name   = EQUITY_INTL["name"]
+        equity_winner_name   = profile["equity_intl"]["name"]
 
     # ── Step 3: Absolute momentum – equity winner vs risk-free ────────────────
     equity_mom  = scores[equity_winner].momentum_pct
@@ -137,7 +130,7 @@ def compute_signal(prices: pd.DataFrame) -> GEMSignal:
         hold_name   = equity_winner_name
     else:
         hold_ticker = sh_ticker
-        hold_name   = SAFE_HAVEN["name"]
+        hold_name   = profile["safe_haven"]["name"]
 
     return GEMSignal(
         hold_ticker    = hold_ticker,
@@ -146,4 +139,5 @@ def compute_signal(prices: pd.DataFrame) -> GEMSignal:
         equity_winner  = equity_winner,
         beat_risk_free = beat_rf,
         as_of_date     = as_of_date,
+        strategy       = profile["key"],
     )

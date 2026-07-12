@@ -10,9 +10,10 @@ Prints the current GEM signal to stdout with a clean, colour-coded layout.
 
 from __future__ import annotations
 
+import argparse
 import sys
 
-from config import ALL_TICKERS, EQUITY_US, EQUITY_INTL, RISK_FREE, SAFE_HAVEN
+from config import DEFAULT_STRATEGY, STRATEGIES, get_strategy, strategy_tickers
 from data.fetcher import fetch_prices
 from strategy.gem import GEMSignal, compute_signal
 
@@ -43,21 +44,21 @@ def _pct_color(pct: float) -> str:
 
 # ── Rendering ─────────────────────────────────────────────────────────────────
 
-def print_signal(signal: GEMSignal) -> None:
+def print_signal(signal: GEMSignal, profile: dict) -> None:
     width = 62
     line  = "─" * width
 
     print()
     print(f"{BOLD}{CYAN}{'GEM STRATEGY SIGNAL':^{width}}{RESET}")
-    print(f"{DIM}{'Global Equity Momentum  ·  Antonacci (2014)':^{width}}{RESET}")
+    print(f"{DIM}{profile['label']:^{width}}{RESET}")
     print(line)
 
     # ── Momentum scores table ─────────────────────────────────────────────────
     ticker_label = {
-        EQUITY_US["ticker"]:   f"US Equity    ({EQUITY_US['ticker']})",
-        EQUITY_INTL["ticker"]: f"Intl Equity  ({EQUITY_INTL['ticker']})",
-        SAFE_HAVEN["ticker"]:  f"Safe Haven   ({SAFE_HAVEN['ticker']})",
-        RISK_FREE["ticker"]:   f"Risk-Free    ({RISK_FREE['ticker']})",
+        profile["equity_us"]["ticker"]:   f"US Equity    ({profile['equity_us']['ticker']})",
+        profile["equity_intl"]["ticker"]: f"Intl Equity  ({profile['equity_intl']['ticker']})",
+        profile["safe_haven"]["ticker"]:  f"Safe Haven   ({profile['safe_haven']['ticker']})",
+        profile["risk_free"]["ticker"]:   f"Risk-Free    ({profile['risk_free']['ticker']})",
     }
 
     print(f"\n  {'ETF':<30} {'Then':>8}  {'Now':>8}  {'12M Mom':>9}")
@@ -84,7 +85,7 @@ def print_signal(signal: GEMSignal) -> None:
 
     # ── Decision path ─────────────────────────────────────────────────────────
     eq_winner_name = next(
-        v["name"] for v in [EQUITY_US, EQUITY_INTL]
+        v["name"] for v in [profile["equity_us"], profile["equity_intl"]]
         if v["ticker"] == signal.equity_winner
     )
     print(f"\n  {BOLD}Step 1 – Relative momentum{RESET}")
@@ -100,7 +101,7 @@ def print_signal(signal: GEMSignal) -> None:
     print(line)
 
     # ── Final signal ──────────────────────────────────────────────────────────
-    hold_color = GREEN if signal.hold_ticker != SAFE_HAVEN["ticker"] else YELLOW
+    hold_color = GREEN if signal.hold_ticker != profile["safe_haven"]["ticker"] else YELLOW
     print(f"\n  {BOLD}CURRENT SIGNAL{RESET}")
     print(
         f"\n  {BOLD}HOLD → "
@@ -115,11 +116,26 @@ def print_signal(signal: GEMSignal) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="GEM Tool CLI")
+    parser.add_argument(
+        "--strategy",
+        choices=list(STRATEGIES.keys()),
+        default=DEFAULT_STRATEGY,
+        help=f"Strategy profile to run (default: {DEFAULT_STRATEGY})",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _parse_args()
+    profile = get_strategy(args.strategy)
+    tickers = strategy_tickers(profile)
+
     print(f"\n{DIM}Fetching price data from Yahoo Finance…{RESET}", end="", flush=True)
 
     try:
-        prices = fetch_prices(ALL_TICKERS)
+        prices = fetch_prices(tickers)
     except Exception as exc:
         print(f"\n{RED}Error fetching data: {exc}{RESET}")
         sys.exit(1)
@@ -127,12 +143,12 @@ def main() -> None:
     print(f"  {GREEN}done{RESET}")
 
     try:
-        signal = compute_signal(prices)
+        signal = compute_signal(prices, profile)
     except Exception as exc:
         print(f"{RED}Error computing signal: {exc}{RESET}")
         sys.exit(1)
 
-    print_signal(signal)
+    print_signal(signal, profile)
 
 
 if __name__ == "__main__":

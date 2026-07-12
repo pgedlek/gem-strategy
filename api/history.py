@@ -22,7 +22,7 @@ from typing import List
 
 import pandas as pd
 
-from config import ALL_TICKERS, LOOKBACK_DAYS, SKIP_DAYS
+from config import DEFAULT_STRATEGY, LOOKBACK_DAYS, SKIP_DAYS, get_strategy, strategy_tickers
 from data.fetcher import fetch_prices
 from strategy.gem import GEMSignal, compute_signal
 
@@ -40,10 +40,10 @@ def _first_trading_days(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
     )
 
 
-def compute_history(months: int = 24) -> List[dict]:
+def compute_history(months: int = 24, strategy: str = DEFAULT_STRATEGY) -> List[dict]:
     """
-    Fetch full price history and return one GEM signal per month,
-    most-recent first, capped at *months* entries.
+    Fetch full price history for the given strategy profile and return one
+    GEM signal per month, most-recent first, capped at *months* entries.
 
     fetch_prices is called with extra_months=months so the downloaded
     window extends far enough back that all requested month-starts have
@@ -51,9 +51,12 @@ def compute_history(months: int = 24) -> List[dict]:
 
     Each dict matches the HistoricalEntry schema.
     """
+    profile = get_strategy(strategy)
+    tickers = strategy_tickers(profile)
+
     # Download enough history: standard window + one extra year per month
     # requested beyond the baseline lookback.
-    prices = fetch_prices(ALL_TICKERS, extra_months=months)
+    prices = fetch_prices(tickers, extra_months=months)
 
     month_starts = _first_trading_days(prices.index)
 
@@ -76,7 +79,7 @@ def compute_history(months: int = 24) -> List[dict]:
             continue
 
         try:
-            signal: GEMSignal = compute_signal(slice_df)
+            signal: GEMSignal = compute_signal(slice_df, profile)
         except ValueError as exc:
             logger.warning("Skipping %s — %s", date.date(), exc)
             continue

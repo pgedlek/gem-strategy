@@ -35,6 +35,7 @@ class SignalSchema(BaseModel):
 # ── /signal ───────────────────────────────────────────────────────────────────
 
 class SignalResponse(BaseModel):
+    strategy:     str      = Field(..., example="classic", description="Strategy profile used (config.STRATEGIES key)")
     signal:       SignalSchema
     scores:       Dict[str, MomentumScoreSchema]
     cached:       bool     = Field(..., description="True if result was served from cache")
@@ -53,6 +54,7 @@ class HistoricalEntry(BaseModel):
 
 
 class HistoryResponse(BaseModel):
+    strategy:     str      = Field(..., example="classic", description="Strategy profile used (config.STRATEGIES key)")
     entries:      List[HistoricalEntry]
     months:       int      = Field(..., description="Number of months returned")
     generated_at: datetime
@@ -60,11 +62,17 @@ class HistoryResponse(BaseModel):
 
 # ── /health ───────────────────────────────────────────────────────────────────
 
-class HealthResponse(BaseModel):
-    status:          str      = Field(..., example="ok")
+class StrategyCacheStatus(BaseModel):
     cache_populated: bool
     cache_date:      Optional[str] = Field(None, description="as_of_date of the cached signal")
-    version:         str      = Field(..., example="1.0.0")
+
+
+class HealthResponse(BaseModel):
+    status:     str      = Field(..., example="ok")
+    version:    str      = Field(..., example="1.0.0")
+    strategies: Dict[str, StrategyCacheStatus] = Field(
+        ..., description="Cache status per strategy profile"
+    )
 
 
 # ── /history/series ───────────────────────────────────────────────────────────
@@ -75,6 +83,7 @@ class SeriesPoint(BaseModel):
 
 
 class SeriesResponse(BaseModel):
+    strategy:     str      = Field(..., example="classic", description="Strategy profile used (config.STRATEGIES key)")
     series:       Dict[str, List[SeriesPoint]] = Field(
         ...,
         description="One ordered list of data points per ticker, oldest → newest"
