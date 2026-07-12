@@ -10,6 +10,7 @@ GET /signal          → current GEM signal (cached daily)
 GET /signal/scores   → momentum scores for all ETFs (cached daily)
 GET /history         → monthly GEM signals for the past N months
 GET /history/series   → momentum history, chart-ready
+GET /performance     → raw daily prices for cumulative-return charting
 
 Every signal/history endpoint accepts a `strategy` query param selecting
 which strategy profile (config.STRATEGIES) to run — "classic" (default,
@@ -23,6 +24,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +32,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.cache import signal_cache
 from api.history import compute_history
 from api.schemas import (
+    PerformanceResponse,
+    PriceHistoryPoint,
     SeriesPoint,
     SeriesResponse,
     HealthResponse,
@@ -40,7 +44,8 @@ from api.schemas import (
     SignalSchema,
     StrategyCacheStatus,
 )
-from config import DEFAULT_STRATEGY, STRATEGIES
+from config import DEFAULT_STRATEGY, STRATEGIES, get_strategy, strategy_tickers
+from data.fetcher import fetch_price_history
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +61,8 @@ _strategy_query = Query(
     default=StrategyKey(DEFAULT_STRATEGY),
     description="Strategy profile to run: " + ", ".join(STRATEGIES),
 )
+
+PerformancePeriod = Literal["ytd", "1mo", "3mo", "6mo", "1y", "3y", "5y", "10y", "max"]
 
 
 # ── Lifespan: warm the default strategy's cache on startup ────────────────────
@@ -301,5 +308,56 @@ async def get_history_series(
         strategy     = strategy.value,
         series       = series,
         months       = len(chronological),
+        generated_at = datetime.utcnow(),
+    )
+
+
+@app.get(
+    "/performance",
+    response_model=PerformanceResponse,
+    summary="Raw price history for cumulative-return charting",
+    tags=["history"],
+)
+async def get_performance(
+    period: PerformancePeriod = Query(
+        default="1y",
+        description="Preset lookback period: ytd, 1mo, 3mo, 6mo, 1y, 3y, 5y, 10y, max",
+    ),
+    strategy: StrategyKey = _strategy_query,
+) -> PerformanceResponse:
+    """
+    Returns raw daily adjusted-close prices for every ETF in the selected
+    strategy's universe, over the requested period — one series per ticker,
+    oldest → newest.
+
+    Unlike `/signal`'s momentum scores, this is unprocessed price data: the
+    client normalizes each series to a cumulative % return from its own
+    first point (e.g. `(price / series[0].price - 1) * 100`), so the chart
+    always starts every line at 0% regardless of the selected period.
+
+    ⚠️ Fetches fresh price data on every call and may take a few seconds,
+    longer for "10y" / "max".
+    """
+    try:
+        profile = get_strategy(strategy.value)
+        tickers = strategy_tickers(profile)
+        loop = asyncio.get_event_loop()
+        prices = await loop.run_in_executor(None, fetch_price_history, tickers, period)
+    except Exception as exc:
+        logger.error("Performance fetch failed: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Unable to fetch performance: {exc}")
+
+    series: dict[str, list[PriceHistoryPoint]] = {
+        ticker: [
+            PriceHistoryPoint(date=idx.strftime("%Y-%m-%d"), price=round(float(price), 2))
+            for idx, price in prices[ticker].items()
+        ]
+        for ticker in tickers
+    }
+
+    return PerformanceResponse(
+        strategy     = strategy.value,
+        period       = period,
+        series       = series,
         generated_at = datetime.utcnow(),
     )

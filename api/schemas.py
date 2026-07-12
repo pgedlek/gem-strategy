@@ -90,3 +90,21 @@ class SeriesResponse(BaseModel):
     )
     months:       int      = Field(..., description="Number of months returned per series")
     generated_at: datetime
+
+
+# ── /performance ─────────────────────────────────────────────────────────────
+
+class PriceHistoryPoint(BaseModel):
+    date:  str   = Field(..., example="2025-04-15", description="Trading day, YYYY-MM-DD")
+    price: float = Field(..., description="Adjusted close price")
+
+
+class PerformanceResponse(BaseModel):
+    strategy:     str      = Field(..., example="classic", description="Strategy profile used (config.STRATEGIES key)")
+    period:       str      = Field(..., example="1y", description="Requested preset period")
+    series:       Dict[str, List[PriceHistoryPoint]] = Field(
+        ...,
+        description="One ordered list of raw daily prices per ticker, oldest → newest. "
+                     "Cumulative % return is computed client-side against each series' first point."
+    )
+    generated_at: datetime

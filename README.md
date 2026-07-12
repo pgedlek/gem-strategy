@@ -134,8 +134,15 @@ Two things to know that are inherent to free hosting, not bugs:
 | `GET`  | `/signal/scores`    | Raw 12-month momentum % for all 4 ETFs            |
 | `GET`  | `/history?months=N` | Monthly GEM signals for the past N months (1–120) |
 | `GET`  | `/history/series?months=N` | Momentum history, one series per ticker (chart-ready) |
+| `GET`  | `/performance?period=P` | Raw daily prices per ticker, for cumulative-return charting |
 
-Every `/signal*` and `/history*` endpoint accepts an optional `?strategy=` query param:
+`/performance` is unprocessed data, unlike the momentum-based endpoints above — it's raw adjusted
+close prices, oldest → newest, per ticker. `period` is one of `ytd`, `1mo`, `3mo`, `6mo`, `1y`,
+`3y`, `5y`, `10y`, `max` (default `1y`). Clients normalize each series to a cumulative % return
+from its own first point (e.g. `(price / series[0].price - 1) * 100`) — the server intentionally
+doesn't pre-normalize, since "0%" only makes sense relative to whatever period the client picked.
+
+Every `/signal*`, `/history*`, and `/performance` endpoint accepts an optional `?strategy=` query param:
 `classic` (default) or `aggressive`. See [Strategy profiles](#how-it-works) above. An unknown
 value returns `422 Unprocessable Entity`.
 
