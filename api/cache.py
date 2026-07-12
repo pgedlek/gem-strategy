@@ -6,7 +6,10 @@ Simple in-memory daily cache for the GEM signal.
 Design:
   - On first request of the day, fetch prices and compute the signal.
   - Subsequent requests return the cached result instantly.
-  - At midnight (next calendar day) the cache is stale and recomputes.
+  - At midnight (next calendar day) the cache is stale and recomputes —
+    except across weekends, when markets are closed and there's no new
+    trading data to fetch, so the Friday result keeps serving through
+    Saturday and Sunday.
   - Thread-safe via asyncio.Lock — FastAPI is async, so one lock is enough.
 
 For a production deployment you'd replace _store with Redis, but the
@@ -73,7 +76,10 @@ class SignalCache:
     def _is_stale(self) -> bool:
         if self._entry is None:
             return True
-        return self._entry.cache_date < date.today()
+        today = date.today()
+        if today.weekday() >= 5:  # Saturday=5, Sunday=6 — markets closed, no new data possible
+            return False
+        return self._entry.cache_date < today
 
     async def _refresh(self) -> None:
         logger.info("Cache miss — fetching prices and computing GEM signal…")

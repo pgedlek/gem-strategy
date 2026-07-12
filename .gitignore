@@ -1,5 +1,5 @@
 # Virtual environment directories
-/gem
+.venv
 
 # Ignore all __pycache__ directories anywhere in the project
 **/__pycache__/

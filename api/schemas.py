@@ -65,3 +65,19 @@ class HealthResponse(BaseModel):
     cache_populated: bool
     cache_date:      Optional[str] = Field(None, description="as_of_date of the cached signal")
     version:         str      = Field(..., example="1.0.0")
+
+
+# ── /history/series ───────────────────────────────────────────────────────────
+
+class SeriesPoint(BaseModel):
+    date:         str   = Field(..., example="2025-04", description="Month in YYYY-MM format")
+    momentum_pct: float = Field(..., description="12-month momentum in percent")
+
+
+class SeriesResponse(BaseModel):
+    series:       Dict[str, List[SeriesPoint]] = Field(
+        ...,
+        description="One ordered list of data points per ticker, oldest → newest"
+    )
+    months:       int      = Field(..., description="Number of months returned per series")
+    generated_at: datetime
