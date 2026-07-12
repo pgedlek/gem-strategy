@@ -259,4 +259,4 @@ Import it in Postman via **Import → drag the file in**. The `base_url` variabl
 - [x] Selectable strategy profiles (classic SPY/ACWX, aggressive QQQ/EEM)
 - [ ] Monthly backtest with performance stats
 - [ ] CSV / JSON export
-- [ ] Web UI (React)
+- [x] Web UI (React) — see [`frontend`](https://github.com/pgedlek/gem-strategy-ui)
