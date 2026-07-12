@@ -110,6 +110,21 @@ Interactive API docs (Swagger UI) are available at **`http://localhost:8000/docs
 
 ---
 
+## Deployment (Render.com, free tier)
+
+This repo includes a `render.yaml` blueprint, so deploying is:
+
+1. Push this repo to GitHub (as `pgedlek/gem-strategy`).
+2. On [Render](https://render.com), sign in with GitHub → **New +** → **Blueprint** → select this repo. Render reads `render.yaml` and configures the service automatically (Python env, `pip install -r requirements.txt`, `uvicorn api.app:app --host 0.0.0.0 --port $PORT`, free plan).
+3. Deploy. The service comes up at `https://gem-strategy-api.onrender.com` (or whatever name you gave it in the dashboard if you changed it from the blueprint default — the frontend's `VITE_API_BASE_URL` needs to match).
+
+Two things to know that are inherent to free hosting, not bugs:
+
+- **Cold start.** Render's free tier spins the service down after ~15 minutes idle. The first request afterward takes ~30-50s to wake it back up — the frontend's loading state handles this gracefully, it just looks slow rather than broken.
+- **yfinance from cloud IPs.** Yahoo Finance has, at times, rate-limited or blocked requests from certain cloud-provider IP ranges. If `/signal` starts returning `503`s in production but works fine locally, this is the likely cause — there's no free fix for it, just a known tradeoff of the free-hosting + yfinance combination.
+
+---
+
 ## API endpoints
 
 | Method | Path                | Description                                       |
